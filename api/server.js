@@ -803,7 +803,7 @@ app.get('/api/chat-history/:roomId', async (req, res) => {
 // ROOM ENDPOINTS
 // ============================================
 
-// Check if room exists (NEW)
+// Check if room exists (UPDATED & FIXED)
 app.get('/api/room/check/:roomCode', async (req, res) => {
   try {
     const { roomCode } = req.params;
@@ -815,6 +815,7 @@ app.get('/api/room/check/:roomCode', async (req, res) => {
     // Try Firebase first
     try {
       meeting = await Meeting.getByRoomCode(roomCode);
+      console.log('📊 Firebase meeting data:', meeting);
     } catch (dbError) {
       console.log('[Firebase] Database not available, checking memory');
     }
@@ -822,38 +823,56 @@ app.get('/api/room/check/:roomCode', async (req, res) => {
     // Check in-memory storage if Firebase fails
     if (!meeting) {
       meeting = inMemoryRooms.get(roomCode);
+      console.log('📊 Memory meeting data:', meeting);
     }
     
     if (!meeting) {
+      console.log('❌ Room not found:', roomCode);
       return res.json({ 
         exists: false, 
         message: 'Room not found' 
       });
     }
     
-    // Check if room is still active
-    const isActive = meeting.isActive !== false;
+    // Determine if room is active
+    // A room is active if:
+    // 1. isActive is explicitly true, OR
+    // 2. isActive is undefined/null (backward compatibility), OR
+    // 3. Has active participants (those without leftAt timestamp)
+    const activeParticipants = meeting.participants?.filter(p => !p.leftAt) || [];
+    const isActive = meeting.isActive !== false && activeParticipants.length > 0;
+    
+    console.log('✅ Room found:', {
+      roomCode,
+      isActive,
+      activeParticipants: activeParticipants.length,
+      totalParticipants: meeting.participants?.length || 0,
+      explicitIsActive: meeting.isActive
+    });
     
     res.json({
       exists: true,
       active: isActive,
       roomName: meeting.roomName,
       hostName: meeting.hostName,
-      participantCount: meeting.participants?.filter(p => !p.leftAt).length || 0,
+      participantCount: activeParticipants.length,
       maxParticipants: meeting.settings?.maxParticipants || 100,
-      isPasswordProtected: !!meeting.settings?.password
+      isPasswordProtected: !!meeting.settings?.password,
+      createdAt: meeting.createdAt,
+      startTime: meeting.startTime
     });
     
   } catch (error) {
     console.error('❌ Error checking room:', error);
     res.status(500).json({ 
       error: 'Failed to check room', 
-      exists: false 
+      exists: false,
+      message: error.message
     });
   }
 });
 
-// Create room
+// Create room (UPDATED with isActive: true)
 app.post('/api/room/create', async (req, res) => {
   try {
     console.log('Incoming request body:', req.body);
@@ -892,49 +911,34 @@ app.post('/api/room/create', async (req, res) => {
       screenShareEnabled: true
     };
 
+    const meetingData = {
+      roomCode,
+      meetingId,
+      roomName: req.body.roomName.trim(),
+      hostUserId: userId,
+      hostName: username.trim(),
+      participants: [{
+        userId,
+        userName: username.trim(),
+        joinedAt: new Date(),
+        isHost: true,
+        cameraOn: true,
+        micOn: true
+      }],
+      settings,
+      isActive: true, // ✅ EXPLICITLY SET TO TRUE
+      startTime: new Date(),
+      createdAt: new Date(),
+      isInstant: req.body.isInstant || false
+    };
+
     try {
-      await Meeting.create({
-        roomCode,
-        meetingId,
-        roomName: req.body.roomName.trim(),
-        hostUserId: userId,
-        hostName: username.trim(),
-        participants: [{
-          userId,
-          userName: username.trim(),
-          joinedAt: new Date(),
-          isHost: true,
-          cameraOn: true,
-          micOn: true
-        }],
-        settings,
-        isInstant: req.body.isInstant || false
-      });
-      
+      await Meeting.create(meetingData);
       console.log(`[Firebase] Meeting created: ${roomCode} by ${username}`);
     } catch (dbError) {
       console.log('[Firebase] Save failed:', dbError.message);
       console.log('[Memory] Storing in memory as fallback');
-      
-      inMemoryRooms.set(roomCode, {
-        roomCode,
-        meetingId,
-        roomName: req.body.roomName.trim(),
-        hostUserId: userId,
-        hostName: username.trim(),
-        participants: [{
-          userId,
-          userName: username.trim(),
-          joinedAt: new Date(),
-          isHost: true,
-          cameraOn: true,
-          micOn: true
-        }],
-        settings,
-        isActive: true,
-        startTime: new Date(),
-        isInstant: req.body.isInstant || false
-      });
+      inMemoryRooms.set(roomCode, meetingData);
     }
     
     res.status(201).json({ 
@@ -961,7 +965,7 @@ app.post('/api/room/create', async (req, res) => {
   }
 });
 
-// Join room (UPDATED with better validation and error handling)
+// Join room (UPDATED with room reactivation and better validation)
 app.post('/api/room/join', async (req, res) => {
   try {
     const { roomCode, username, password } = req.body;
@@ -991,11 +995,17 @@ app.post('/api/room/join', async (req, res) => {
       meeting = inMemoryRooms.get(roomCode);
     }
     
-    if (!meeting || !meeting.isActive) {
+    if (!meeting) {
       return res.status(404).json({ 
         success: false, 
         error: 'Room not found or meeting has ended' 
       });
+    }
+
+    // ✅ REACTIVATE ROOM IF IT WAS INACTIVE
+    if (meeting.isActive === false) {
+      meeting.isActive = true;
+      console.log(`[Room] Reactivating room: ${roomCode}`);
     }
     
     // Verify password if room is password protected
@@ -1019,7 +1029,8 @@ app.post('/api/room/join', async (req, res) => {
       userId,
       userName: username,
       joinedAt: new Date(),
-      isHost: false
+      isHost: false,
+      // ✅ NO leftAt timestamp - this marks them as active
     };
     
     meeting.participants.push(newParticipant);
@@ -1027,7 +1038,8 @@ app.post('/api/room/join', async (req, res) => {
     // Update Firebase
     try {
       await Meeting.update(meeting.id, {
-        participants: meeting.participants
+        participants: meeting.participants,
+        isActive: true // ✅ ENSURE ROOM IS ACTIVE
       });
       console.log(`[Firebase] User ${username} joined room ${meeting.roomCode}`);
     } catch (dbError) {
@@ -1036,6 +1048,7 @@ app.post('/api/room/join', async (req, res) => {
       const room = inMemoryRooms.get(roomCode);
       if (room) {
         room.participants.push(newParticipant);
+        room.isActive = true; // ✅ ENSURE ROOM IS ACTIVE
       }
     }
     
@@ -1374,8 +1387,8 @@ const startServer = async () => {
         console.log('🏠 Root Endpoint: /');
         console.log('');
         console.log('Available API Endpoints:');
-        console.log('  GET    /api/room/check/:roomCode   (NEW)');
-        console.log('  POST   /api/room/create');
+        console.log('  GET    /api/room/check/:roomCode   (UPDATED)');
+        console.log('  POST   /api/room/create            (UPDATED)');
         console.log('  POST   /api/room/join              (UPDATED)');
         console.log('  POST   /api/room/end');
         console.log('  POST   /api/room/leave');
