@@ -1,39 +1,46 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.production
+config.env
+
 # Logs
-logs
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+logs/
 
-node_modules
-dist
-dist-ssr
-build
-*.local
+# SSL Certificates (local only)
+ssl/
+*.pem
+*.key
+*.crt
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS files
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-.vercel
+Thumbs.db
 
-# Prevent duplicate project folders
-my-app/
-my-react-app/
-shortmeet-master/
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
 
+# Firebase service account (use env vars instead)
 *serviceAccountKey.json
-# Environment variables with API keys
-.env
-server/.env
-**/.env
-"server/config/serviceAccountKey.json" 
-node_modules
+firebase-adminsdk*.json
+
+# Test files
+test.js
+test2.js
+
+# Build outputs
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/

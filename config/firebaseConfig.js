@@ -1,34 +1,38 @@
-// server/config/firebaseConfig.js
 const admin = require('firebase-admin');
 
-// Initialize Firebase Admin
-let serviceAccount;
+let db;
 
 try {
-  // Try to load from environment variable first
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    // Fall back to local file
-    serviceAccount = require('./serviceAccountKey.json');
+  // Handle Railway environment variable format
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  
+  if (privateKey) {
+    // Replace escaped newlines with actual newlines
+    privateKey = privateKey.replace(/\\n/g, '\n');
   }
-} catch (error) {
-  console.error('❌ Firebase service account not found:', error.message);
-  console.log('⚠️  Please add FIREBASE_SERVICE_ACCOUNT to your .env file or add serviceAccountKey.json');
-}
 
-if (!admin.apps.length && serviceAccount) {
+  if (!process.env.FIREBASE_PROJECT_ID || !privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
+    throw new Error('Missing Firebase environment variables');
+  }
+
+  const serviceAccount = {
+    type: "service_account",
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key: privateKey,
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  };
+
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     databaseURL: process.env.FIREBASE_DATABASE_URL
   });
+
+  db = admin.firestore();
+  console.log('✅ Firebase initialized successfully');
+} catch (error) {
+  console.error('❌ Firebase initialization failed:', error.message);
+  console.error('Continuing with in-memory storage only');
+  db = null;
 }
 
-const db = admin.firestore();
-const auth = admin.auth(); // Add Firebase Auth
-
-module.exports = { 
-  db, 
-  auth,
-  admin 
-};
+module.exports = { db, admin };
