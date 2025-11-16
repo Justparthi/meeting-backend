@@ -123,9 +123,9 @@ app.use('/api/transcripts', transcriptRoutes);
 // ============================================
 let server;
 
-// Railway handles HTTPS at the edge, so we always use HTTP
-if (process.env.RAILWAY_ENVIRONMENT) {
-  console.log('🚂 Running on Railway - using HTTP (Railway handles HTTPS)');
+// Cloud platforms handle HTTPS at the edge, so we always use HTTP
+if (process.env.RENDER || process.env.RAILWAY_ENVIRONMENT) {
+  console.log('🌐 Running on Cloud Platform - using HTTP (Platform handles HTTPS)');
   server = http.createServer(app);
 } else {
   // Local development - check for SSL
