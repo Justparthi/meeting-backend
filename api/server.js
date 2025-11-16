@@ -69,6 +69,12 @@ app.use(cors({
       return callback(null, true);
     }
     
+    // Render URLs
+    if (origin.includes('onrender.com') || origin.includes('render.com')) {
+      console.log('✅ Render domain - allowing');
+      return callback(null, true);
+    }
+    
     // Tunnel services for development
     if (origin.includes('ngrok') || origin.includes('loca.lt')) {
       console.log('✅ Tunnel domain - allowing');
@@ -170,6 +176,7 @@ const io = new Server(server, {
       }
       
       if (origin.includes('railway.app') || 
+          origin.includes('onrender.com') ||
           origin.includes('ngrok') || 
           origin.includes('loca.lt')) {
         return callback(null, true);
@@ -1256,7 +1263,7 @@ const startServer = async () => {
 
     // Railway provides PORT environment variable
     const PORT = process.env.PORT || 3001;
-    const HOST = process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : 'localhost';
+    const HOST = '0.0.0.0'; // Always bind to 0.0.0.0 for cloud platforms
 
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
@@ -1280,7 +1287,15 @@ const startServer = async () => {
         console.log(`🔥 Database:    Firebase Firestore`);
         console.log(`⚡ Socket.IO:   Enabled (WebSocket + Polling)`);
         
-        if (process.env.RAILWAY_ENVIRONMENT) {
+        if (process.env.RENDER) {
+          console.log(`🌐 Platform:    Render`);
+          console.log(`🌍 Service:     ${process.env.RENDER_SERVICE_NAME || 'shortmeet-backend'}`);
+          if (process.env.RENDER_EXTERNAL_URL) {
+            console.log(`🌐 Public URL:  ${process.env.RENDER_EXTERNAL_URL}`);
+          } else {
+            console.log(`🌐 Public URL:  https://shortmeet-backend.onrender.com (check dashboard)`);
+          }
+        } else if (process.env.RAILWAY_ENVIRONMENT) {
           console.log(`🚂 Platform:    Railway`);
           console.log(`🌍 Environment: ${process.env.RAILWAY_ENVIRONMENT}`);
           if (process.env.RAILWAY_PUBLIC_DOMAIN) {
